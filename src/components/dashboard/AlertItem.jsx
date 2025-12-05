@@ -17,7 +17,7 @@ const severityStyles = {
 };
 
 export function AlertItem({ alert, isNew }) {
-  const Icon = severityIcons[alert.severity];
+  const Icon = severityIcons[alert.severity] || Info;
   
   return (
     <div className={cn(

@@ -1,4 +1,5 @@
-const API_BASE_URL = 'http://localhost:3001/api';
+const API_BASE_URL =
+  import.meta.env.VITE_API_BASE_URL?.trim() || 'http://localhost:3001/api';
 
 // Helper function for fetch requests
 async function fetchAPI(endpoint, options) {
@@ -131,4 +132,12 @@ export async function search(query) {
 // Analytics data
 export async function fetchAnalytics() {
     return fetchAPI('/analytics');
+}
+
+export async function fetchIndiaRisk({ lat, lon }) {
+    const result = await fetchAPI(`/india-risk?lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}`);
+    if (result && result.data) {
+        return result.data;
+    }
+    return null;
 }

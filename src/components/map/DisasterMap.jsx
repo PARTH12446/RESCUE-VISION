@@ -15,7 +15,12 @@ const severitySizes = {
   critical: 'w-6 h-6',
 };
 
-export function DisasterMap({ predictions = [], reportedDisasters = [] } = {}) {
+export function DisasterMap({
+  predictions = [],
+  reportedDisasters = [],
+  selectedPredictionId,
+  onPredictionClick,
+} = {}) {
   return (
     <div className="glass rounded-xl overflow-hidden">
       <div className="p-4 border-b border-border">
@@ -24,7 +29,7 @@ export function DisasterMap({ predictions = [], reportedDisasters = [] } = {}) {
       </div>
       
       {/* Simplified map visualization */}
-      <div className="relative h-96 bg-secondary/30">
+      <div className="relative h-[22rem] bg-secondary/30">
         {/* Grid overlay */}
         <div className="absolute inset-0 opacity-20">
           <svg className="w-full h-full">
@@ -58,11 +63,14 @@ export function DisasterMap({ predictions = [], reportedDisasters = [] } = {}) {
             { left: '18%', top: '20%' },   // Seattle
           ];
           
+          const isSelected = selectedPredictionId && prediction.id === selectedPredictionId;
+
           return (
             <div
               key={`prediction-${prediction.id}`}
               className="absolute transform -translate-x-1/2 -translate-y-1/2 group cursor-pointer"
               style={{ left: positions[index]?.left, top: positions[index]?.top }}
+              onClick={() => onPredictionClick && onPredictionClick(prediction)}
             >
               {/* Pulse effect */}
               {prediction.severity === 'critical' && (
@@ -75,9 +83,10 @@ export function DisasterMap({ predictions = [], reportedDisasters = [] } = {}) {
               
               {/* Marker */}
               <div className={cn(
-                "rounded-full border-2 border-background shadow-lg transition-transform group-hover:scale-150",
+                "rounded-full border-2 shadow-lg transition-transform group-hover:scale-150",
                 disasterColors[prediction.type],
-                severitySizes[prediction.severity]
+                severitySizes[prediction.severity],
+                isSelected ? 'ring-2 ring-offset-2 ring-primary border-primary' : 'border-background'
               )}>
                 <span className="sr-only">{prediction.type} in {prediction.location}</span>
               </div>

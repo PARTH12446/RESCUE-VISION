@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { PredictionChart } from '@/components/charts/PredictionChart';
 import { ResourceAllocationChart } from '@/components/charts/ResourceAllocationChart';
-import { fetchAnalytics } from '@/services/api';
+import { fetchAnalytics, fetchIndiaRisk } from '@/services/api';
+
 import {
   LineChart,
   Line,
@@ -21,6 +22,9 @@ const COLORS = ['hsl(200, 100%, 45%)', 'hsl(38, 95%, 50%)', 'hsl(280, 70%, 50%)'
 const Analytics = () => {
   const [analyticsData, setAnalyticsData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [indiaRisk, setIndiaRisk] = useState(null);
+  const [indiaRiskLoading, setIndiaRiskLoading] = useState(false);
+  const [indiaRiskError, setIndiaRiskError] = useState(null);
 
   useEffect(() => {
     const loadAnalytics = async () => {
@@ -40,6 +44,37 @@ const Analytics = () => {
     return () => clearInterval(interval);
   }, []);
 
+  const handleCheckIndiaRisk = () => {
+    if (!navigator.geolocation) {
+      setIndiaRiskError('Geolocation is not supported in this browser.');
+      return;
+    }
+
+    setIndiaRiskLoading(true);
+    setIndiaRiskError(null);
+
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const { latitude, longitude } = pos.coords;
+        fetchIndiaRisk({ lat: latitude, lon: longitude })
+          .then((risk) => {
+            setIndiaRisk(risk);
+          })
+          .catch((err) => {
+            setIndiaRiskError(err instanceof Error ? err.message : 'Failed to fetch India risk');
+          })
+          .finally(() => {
+            setIndiaRiskLoading(false);
+          });
+      },
+      (err) => {
+        setIndiaRiskError(err.message || 'Failed to fetch current location.');
+        setIndiaRiskLoading(false);
+      },
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
+  };
+
   if (loading || !analyticsData) {
     return (
       <MainLayout title="Analytics Dashboard" subtitle="Performance metrics and insights">
@@ -55,7 +90,7 @@ const Analytics = () => {
       title="Analytics Dashboard"
       subtitle="Performance metrics and insights"
     >
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+      <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-8">
         <div className="glass rounded-xl p-6">
           <p className="text-sm text-muted-foreground">Avg Response Time</p>
           <p className="text-3xl font-bold text-foreground mt-2">{analyticsData.kpis?.avgResponseTime?.toFixed(1) || 0} min</p>
@@ -75,6 +110,40 @@ const Analytics = () => {
           <p className="text-sm text-muted-foreground">Resource Efficiency</p>
           <p className="text-3xl font-bold text-foreground mt-2">{analyticsData.kpis?.resourceEfficiency?.toFixed(0) || 0}%</p>
           <p className="text-sm text-success mt-1">↑ 5% vs last month</p>
+        </div>
+        <div className="glass rounded-xl p-6 md:col-span-2">
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center justify-between">
+              <p className="text-sm text-muted-foreground">My India Risk</p>
+              <button
+                type="button"
+                className="text-xs px-2 py-1 rounded-md border border-border hover:bg-muted/40 transition-colors"
+                onClick={handleCheckIndiaRisk}
+                disabled={indiaRiskLoading}
+              >
+                {indiaRiskLoading ? 'Checking…' : 'Check risk'}
+              </button>
+            </div>
+            {indiaRiskError && (
+              <p className="text-xs text-destructive">{indiaRiskError}</p>
+            )}
+            {indiaRisk && !indiaRiskLoading && (
+              <div className="text-xs space-y-1">
+                <p className="text-foreground font-medium">{indiaRisk.location}</p>
+                <p className="text-muted-foreground capitalize">
+                  {indiaRisk.type} · {indiaRisk.severity}
+                </p>
+                <p className="text-muted-foreground">
+                  {(indiaRisk.probability * 100).toFixed(1)}% · {indiaRisk.riskScore.toFixed(1)}/10
+                </p>
+              </div>
+            )}
+            {!indiaRisk && !indiaRiskLoading && !indiaRiskError && (
+              <p className="text-xs text-muted-foreground">
+                Use live India risk to interpret current performance metrics.
+              </p>
+            )}
+          </div>
         </div>
       </div>
 

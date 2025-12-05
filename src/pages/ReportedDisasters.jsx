@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { MainLayout } from '@/components/layout/MainLayout';
-import { fetchReportedDisasters } from '@/services/api';
+import { fetchReportedDisasters, fetchIndiaRisk } from '@/services/api';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 
@@ -23,6 +23,9 @@ export default function ReportedDisasters() {
   const [error, setError] = useState(null);
   const [severityFilter, setSeverityFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [indiaRisk, setIndiaRisk] = useState(null);
+  const [indiaRiskLoading, setIndiaRiskLoading] = useState(false);
+  const [indiaRiskError, setIndiaRiskError] = useState(null);
 
   useEffect(() => {
     let mounted = true;
@@ -53,6 +56,37 @@ export default function ReportedDisasters() {
     };
   }, []);
 
+  const handleCheckIndiaRisk = () => {
+    if (!navigator.geolocation) {
+      setIndiaRiskError('Geolocation is not supported in this browser.');
+      return;
+    }
+
+    setIndiaRiskLoading(true);
+    setIndiaRiskError(null);
+
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const { latitude, longitude } = pos.coords;
+        fetchIndiaRisk({ lat: latitude, lon: longitude })
+          .then((risk) => {
+            setIndiaRisk(risk);
+          })
+          .catch((err) => {
+            setIndiaRiskError(err instanceof Error ? err.message : 'Failed to fetch India risk');
+          })
+          .finally(() => {
+            setIndiaRiskLoading(false);
+          });
+      },
+      (err) => {
+        setIndiaRiskError(err.message || 'Failed to fetch current location.');
+        setIndiaRiskLoading(false);
+      },
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
+  };
+
   const filteredReports = reports.filter((report) => {
     const severityMatch = severityFilter === 'all' || (report.severity || '').toLowerCase() === severityFilter;
     const statusMatch = statusFilter === 'all' || (report.status || '').toLowerCase() === statusFilter;
@@ -70,6 +104,40 @@ export default function ReportedDisasters() {
             <p className="text-sm text-muted-foreground">
               View and triage incoming disaster reports from civilians, responders, and sensors.
             </p>
+          </div>
+          <div className="glass rounded-xl p-4 md:w-96">
+            <div className="flex flex-col gap-2">
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-semibold text-foreground">My India Risk</p>
+                <button
+                  type="button"
+                  className="text-xs px-2 py-1 rounded-md border border-border hover:bg-muted/40 transition-colors"
+                  onClick={handleCheckIndiaRisk}
+                  disabled={indiaRiskLoading}
+                >
+                  {indiaRiskLoading ? 'Checking…' : 'Check'}
+                </button>
+              </div>
+              {indiaRiskError && (
+                <p className="text-xs text-destructive">{indiaRiskError}</p>
+              )}
+              {indiaRisk && !indiaRiskLoading && (
+                <div className="text-xs space-y-1">
+                  <p className="text-foreground font-medium">{indiaRisk.location}</p>
+                  <p className="text-muted-foreground capitalize">
+                    {indiaRisk.type} · {indiaRisk.severity}
+                  </p>
+                  <p className="text-muted-foreground">
+                    {(indiaRisk.probability * 100).toFixed(1)}% · {indiaRisk.riskScore.toFixed(1)}/10
+                  </p>
+                </div>
+              )}
+              {!indiaRisk && !indiaRiskLoading && !indiaRiskError && (
+                <p className="text-xs text-muted-foreground">
+                  Use India risk context to prioritize which reports to verify first.
+                </p>
+              )}
+            </div>
           </div>
           <div className="flex gap-3">
             <Select value={severityFilter} onValueChange={setSeverityFilter}>

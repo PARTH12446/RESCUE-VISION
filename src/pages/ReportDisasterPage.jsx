@@ -9,13 +9,17 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { MapPin, AlertTriangle, Camera, Plus, X } from 'lucide-react';
 import { useToast } from '@/components/ui/use-toast';
 import { cn } from '@/lib/utils';
+import { fetchIndiaRisk } from '@/services/api';
 
 export function ReportDisasterPage() {
   const navigate = useNavigate();
   const { toast } = useToast();
   const [currentStep, setCurrentStep] = useState(1);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  
+  const [indiaRisk, setIndiaRisk] = useState(null);
+  const [indiaRiskLoading, setIndiaRiskLoading] = useState(false);
+  const [indiaRiskError, setIndiaRiskError] = useState(null);
+
   const [report, setReport] = useState({
     type: undefined,
     title: '',
@@ -89,6 +93,29 @@ export function ReportDisasterPage() {
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  const handleCheckIndiaRiskForArea = () => {
+    const { lat, lng } = report.coordinates || {};
+
+    if (!lat || !lng) {
+      setIndiaRiskError('Set the incident location on the map or address to see India risk for this area.');
+      return;
+    }
+
+    setIndiaRiskLoading(true);
+    setIndiaRiskError(null);
+
+    fetchIndiaRisk({ lat, lon: lng })
+      .then((risk) => {
+        setIndiaRisk(risk);
+      })
+      .catch((err) => {
+        setIndiaRiskError(err instanceof Error ? err.message : 'Failed to fetch India risk for this area');
+      })
+      .finally(() => {
+        setIndiaRiskLoading(false);
+      });
   };
 
   const nextStep = () => setCurrentStep(prev => Math.min(prev + 1, 3));
@@ -273,6 +300,41 @@ export function ReportDisasterPage() {
                       onChange={(e) => handleInputChange('location', e.target.value)}
                       required
                     />
+                  </div>
+
+                  <div className="space-y-2 rounded-md border border-border bg-muted/30 p-4">
+                    <div className="flex items-center justify-between mb-1">
+                      <p className="text-sm font-semibold text-foreground">Current India risk in this area</p>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="xs"
+                        className="h-7 px-2 text-[11px]"
+                        onClick={handleCheckIndiaRiskForArea}
+                        disabled={indiaRiskLoading}
+                      >
+                        {indiaRiskLoading ? 'Checking...' : 'Check risk'}
+                      </Button>
+                    </div>
+                    {indiaRiskError && (
+                      <p className="text-xs text-destructive">{indiaRiskError}</p>
+                    )}
+                    {indiaRisk && !indiaRiskLoading && (
+                      <div className="text-xs space-y-1">
+                        <p className="text-foreground font-medium">{indiaRisk.location}</p>
+                        <p className="text-muted-foreground capitalize">
+                          {indiaRisk.type}  • {indiaRisk.severity}
+                        </p>
+                        <p className="text-muted-foreground">
+                          {(indiaRisk.probability * 100).toFixed(1)}%  • {indiaRisk.riskScore.toFixed(1)}/10
+                        </p>
+                      </div>
+                    )}
+                    {!indiaRisk && !indiaRiskLoading && !indiaRiskError && (
+                      <p className="text-xs text-muted-foreground">
+                        Use India risk for this location to prioritize which citizen reports to triage first.
+                      </p>
+                    )}
                   </div>
                 </div>
               )}

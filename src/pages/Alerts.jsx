@@ -3,7 +3,7 @@ import { useState, useEffect, useRef } from 'react';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { AlertItem } from '@/components/dashboard/AlertItem';
 import { useRealtimeData } from '@/hooks/useRealtimeData';
-import { markAlertAsRead } from '@/services/api';
+import { markAlertAsRead, fetchIndiaRisk } from '@/services/api';
 import { Button } from '@/components/ui/button';
 import { Bell, Check, Filter } from 'lucide-react';
 
@@ -12,6 +12,9 @@ const Alerts = () => {
   const [activeFilter, setActiveFilter] = useState('All');
   const [newAlertIds, setNewAlertIds] = useState([]);
   const prevIdsRef = useRef([]);
+  const [indiaRisk, setIndiaRisk] = useState(null);
+  const [indiaRiskLoading, setIndiaRiskLoading] = useState(false);
+  const [indiaRiskError, setIndiaRiskError] = useState(null);
 
   const alerts = Array.isArray(data.alerts) ? data.alerts : [];
 
@@ -48,6 +51,37 @@ const Alerts = () => {
 
     return true;
   });
+
+  const handleCheckIndiaRisk = () => {
+    if (!navigator.geolocation) {
+      setIndiaRiskError('Geolocation is not supported in this browser.');
+      return;
+    }
+
+    setIndiaRiskLoading(true);
+    setIndiaRiskError(null);
+
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const { latitude, longitude } = pos.coords;
+        fetchIndiaRisk({ lat: latitude, lon: longitude })
+          .then((risk) => {
+            setIndiaRisk(risk);
+          })
+          .catch((err) => {
+            setIndiaRiskError(err instanceof Error ? err.message : 'Failed to fetch India risk');
+          })
+          .finally(() => {
+            setIndiaRiskLoading(false);
+          });
+      },
+      (err) => {
+        setIndiaRiskError(err.message || 'Failed to fetch current location.');
+        setIndiaRiskLoading(false);
+      },
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
+  };
 
   const handleMarkAsRead = async (id) => {
     try {
@@ -112,15 +146,37 @@ const Alerts = () => {
             </div>
           </div>
         </div>
-        <div className="glass rounded-xl p-4">
-          <div className="flex items-center gap-3">
-            <div className="p-2 rounded-lg bg-success/20">
-              <Check className="w-5 h-5 text-success" />
+        <div className="glass rounded-xl p-4 md:col-span-1">
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-semibold text-foreground">My India Risk</p>
+              <Button
+                variant="outline"
+                size="xs"
+                className="h-7 px-2 text-[11px]"
+                onClick={handleCheckIndiaRisk}
+                disabled={indiaRiskLoading}
+              >
+                {indiaRiskLoading ? 'Checking…' : 'Check'}
+              </Button>
             </div>
-            <div>
-              <p className="text-2xl font-bold text-foreground">{alertStats.resolvedToday}</p>
-              <p className="text-sm text-muted-foreground">Resolved Today</p>
-            </div>
+            {indiaRiskError && (
+              <p className="text-[11px] text-destructive">{indiaRiskError}</p>
+            )}
+            {indiaRisk && !indiaRiskLoading && (
+              <div className="text-[11px] space-y-1">
+                <p className="text-muted-foreground">{indiaRisk.location}</p>
+                <p className="text-foreground capitalize">{indiaRisk.type} · {indiaRisk.severity}</p>
+                <p className="text-muted-foreground">
+                  {(indiaRisk.probability * 100).toFixed(1)}% · {indiaRisk.riskScore.toFixed(1)}/10
+                </p>
+              </div>
+            )}
+            {!indiaRisk && !indiaRiskLoading && !indiaRiskError && (
+              <p className="text-[11px] text-muted-foreground">
+                Use your location to see current India risk alongside alerts.
+              </p>
+            )}
           </div>
         </div>
       </div>

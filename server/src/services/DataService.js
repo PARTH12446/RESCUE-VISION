@@ -94,6 +94,137 @@ export class DataService {
         }
     }
 
+    async fetchIndiaWeatherFromOpenWeather(lat, lon) {
+        const apiKey = process.env.OPENWEATHER_API_KEY;
+        if (!apiKey) {
+            throw new Error('Missing OPENWEATHER_API_KEY');
+        }
+
+        const url = `https://api.openweathermap.org/data/2.5/onecall?lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}&exclude=minutely,alerts&units=metric&appid=${apiKey}`;
+
+        const response = await fetch(url);
+        if (!response.ok) {
+            throw new Error(`OpenWeatherMap error: ${response.status}`);
+        }
+
+        return response.json();
+    }
+
+    async getIndiaRisk(lat, lon) {
+        try {
+            const weather = await this.fetchIndiaWeatherFromOpenWeather(lat, lon);
+
+            const current = weather.current || {};
+            const daily = Array.isArray(weather.daily) && weather.daily.length > 0 ? weather.daily[0] : {};
+
+            const temp = typeof current.temp === 'number' ? current.temp : null;
+            const maxTemp = typeof daily.temp?.max === 'number' ? daily.temp.max : temp;
+            const rain24h = typeof daily.rain === 'number' ? daily.rain : 0; // mm/day
+            const wind = typeof current.wind_speed === 'number' ? current.wind_speed : 0; // m/s
+            const humidity = typeof current.humidity === 'number' ? current.humidity : 0;
+            const pop = typeof daily.pop === 'number' ? daily.pop : 0.5; // 0-1
+
+            let type = 'general_risk';
+
+            // Heatwave thresholds adapted for many Indian plains regions
+            if (maxTemp !== null && maxTemp >= 37) {
+                type = 'heatwave';
+            }
+
+            // Monsoon / heavy rain: IMD heavy rain ~64.5mm+, very heavy >115.6mm
+            if (rain24h >= 65) {
+                type = 'severe_rain';
+            } else if (rain24h >= 35 && type !== 'heatwave') {
+                type = 'heavy_rain';
+            }
+
+            // Strong winds (possible cyclonic conditions near coast)
+            if (wind >= 20 && type !== 'heatwave') {
+                type = 'storm';
+            }
+
+            let severity = 'low';
+            let baseScore = 2;
+
+            if (type === 'heatwave') {
+                if (maxTemp >= 45) {
+                    severity = 'critical';
+                    baseScore = 9.5;
+                } else if (maxTemp >= 42) {
+                    severity = 'high';
+                    baseScore = 7.5;
+                } else if (maxTemp >= 39) {
+                    severity = 'medium';
+                    baseScore = 5.5;
+                } else {
+                    severity = 'low';
+                    baseScore = 3.5;
+                }
+            } else if (type === 'severe_rain' || type === 'heavy_rain') {
+                if (rain24h >= 200) {
+                    severity = 'critical';
+                    baseScore = 9.5;
+                } else if (rain24h >= 115) {
+                    severity = 'high';
+                    baseScore = 8;
+                } else if (rain24h >= 65) {
+                    severity = 'medium';
+                    baseScore = 6;
+                } else if (rain24h >= 35) {
+                    severity = 'low';
+                    baseScore = 4;
+                }
+            } else if (type === 'storm') {
+                // wind in m/s ~ 10m/s (36 km/h) strong breeze, >17m/s gale
+                if (wind >= 30) {
+                    severity = 'critical';
+                    baseScore = 9;
+                } else if (wind >= 24) {
+                    severity = 'high';
+                    baseScore = 7.5;
+                } else if (wind >= 17) {
+                    severity = 'medium';
+                    baseScore = 5.5;
+                } else {
+                    severity = 'low';
+                    baseScore = 3.5;
+                }
+            }
+
+            const probability = Math.max(0, Math.min(1, pop));
+            const humidityFactor = humidity / 100; // 0-1
+            const riskScoreRaw = baseScore * probability + humidityFactor * 2;
+            const riskScore = Math.max(0, Math.min(10, riskScoreRaw));
+
+            const predictedTime = daily.dt ? new Date(daily.dt * 1000) : new Date(Date.now() + 6 * 60 * 60 * 1000);
+
+            const indiaRisk = {
+                type,
+                location: weather.timezone || 'Selected location in India',
+                coordinates: { lat: Number(lat), lng: Number(lon) },
+                probability,
+                severity,
+                predictedTime,
+                affectedPopulation: 0,
+                riskScore,
+                isActive: true,
+            };
+
+            return {
+                success: true,
+                data: indiaRisk,
+                timestamp: new Date(),
+            };
+        } catch (error) {
+            return {
+                success: false,
+                message: 'Failed to compute India risk from external data',
+                error: error instanceof Error ? error.message : 'Unknown error',
+                timestamp: new Date(),
+            };
+        }
+    }
+
     // ============ PREDICTION METHODS ============
 
     // Get Predictions

@@ -50,9 +50,11 @@ export function useRealtimeData() {
         resourceStats: null,
         reportedDisasters: null,
         analytics: null,
+        indiaRisk: null,
     });
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
+    const [lastUpdated, setLastUpdated] = useState(null);
 
     useEffect(() => {
         let mounted = true;
@@ -90,6 +92,7 @@ export function useRealtimeData() {
                         analytics: null,
                     });
                     setError(null);
+                    setLastUpdated(new Date().toISOString());
                 }
             } catch (err) {
                 if (mounted) {
@@ -122,7 +125,48 @@ export function useRealtimeData() {
         };
     }, []);
 
-    return { data, loading, error };
+    // Manual refresh function for consumers
+    const refresh = async () => {
+        try {
+            setLoading(true);
+            const [stats, predictions, alerts, resources, historical, allocation, insights, alertStats, resourceStats] = await Promise.all([
+                fetchStats(),
+                fetchPredictions(),
+                fetchAlerts(),
+                fetchResources(),
+                fetchHistoricalData(),
+                fetchResourceAllocationData(),
+                fetchAIInsights(),
+                fetchAlertStats(),
+                fetchResourceStats(),
+            ]);
+
+            const allocationData = computeAllocationData(resources);
+
+            setData({
+                stats,
+                predictions,
+                alerts,
+                resources,
+                historicalData: historical,
+                allocationData,
+                insights,
+                alertStats,
+                resourceStats,
+                reportedDisasters: null,
+                analytics: null,
+            });
+            setError(null);
+            setLastUpdated(new Date().toISOString());
+        } catch (err) {
+            setError(err instanceof Error ? err.message : 'Failed to refresh data');
+            console.error('Error refreshing data:', err);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    return { data, loading, error, refresh, lastUpdated };
 }
 
 // Individual hooks for specific data types
