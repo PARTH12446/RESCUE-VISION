@@ -1,4 +1,5 @@
 import { db } from '../config/database.js';
+import { getRoute } from './RoutingProvider.js';
 
 // Helper function to convert database prediction
 const convertPrediction = (dbRow) => ({
@@ -26,6 +27,8 @@ const convertResource = (dbRow) => ({
     location: dbRow.location,
     status: dbRow.status,
     description: dbRow.description,
+    coordinates: dbRow.coordinates || null,
+    roadStatus: dbRow.road_status || null,
     createdAt: dbRow.created_at,
     updatedAt: dbRow.updated_at,
     lastUpdated: dbRow.last_updated
@@ -482,8 +485,8 @@ export class DataService {
         try {
             const result = await db.query(`
                 INSERT INTO resources 
-                (type, name, quantity, available, location, status, description)
-                VALUES ($1, $2, $3, $4, $5, $6, $7)
+                (type, name, quantity, available, location, status, description, coordinates, road_status)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
                 RETURNING *
             `, [
                 resource.type,
@@ -492,7 +495,9 @@ export class DataService {
                 resource.available,
                 resource.location,
                 resource.status || 'available',
-                resource.description || null
+                resource.description || null,
+                resource.coordinates ? JSON.stringify(resource.coordinates) : null,
+                resource.roadStatus || null
             ]);
 
             return {
@@ -526,6 +531,11 @@ export class DataService {
                     if (key === 'lastUpdated') {
                         dbField = 'last_updated';
                         dbValue = new Date(value).toISOString();
+                    } else if (key === 'coordinates') {
+                        dbField = 'coordinates';
+                        dbValue = JSON.stringify(value);
+                    } else if (key === 'roadStatus') {
+                        dbField = 'road_status';
                     }
                     
                     fields.push(`${dbField} = $${paramCount}`);
@@ -1129,6 +1139,286 @@ export class DataService {
                 message: 'Failed to fetch recent alerts',
                 error: error instanceof Error ? error.message : 'Unknown error',
                 timestamp: new Date()
+            };
+        }
+    }
+
+    // ============ AI RESOURCE OPTIMIZATION ============
+
+    async optimizeResources() {
+        try {
+            const [predictionsResult, resourcesResult] = await Promise.all([
+                this.getPredictions(),
+                this.getResources(),
+            ]);
+
+            if (!predictionsResult.success || !resourcesResult.success) {
+                return {
+                    success: false,
+                    message: 'Failed to load data for optimization',
+                    timestamp: new Date(),
+                };
+            }
+
+            const predictions = predictionsResult.data || [];
+            const resources = resourcesResult.data || [];
+
+            if (!predictions.length || !resources.length) {
+                return {
+                    success: false,
+                    message: 'Not enough data to optimize resources',
+                    data: { suggestions: [], summary: null },
+                    timestamp: new Date(),
+                };
+            }
+
+            const demandScores = predictions
+                .filter((p) => p.isActive !== false)
+                .map((p) => ({
+                    id: p.id,
+                    location: p.location,
+                    severity: p.severity,
+                    type: p.type,
+                    riskScore: p.riskScore || 0,
+                    affectedPopulation: p.affectedPopulation || 1,
+                }))
+                .map((p) => ({
+                    ...p,
+                    demandScore: (p.riskScore || 0) * (p.affectedPopulation || 1),
+                }))
+                .sort((a, b) => b.demandScore - a.demandScore);
+
+            const totalDeployedBefore = resources.reduce(
+                (sum, r) => sum + Math.max(0, (r.quantity || 0) - (r.available || 0)),
+                0,
+            );
+
+            const haversineKm = (a, b) => {
+                if (!a || !b || a.lat == null || a.lng == null || b.lat == null || b.lng == null) {
+                    return null;
+                }
+                const toRad = (v) => (v * Math.PI) / 180;
+                const R = 6371;
+                const dLat = toRad((b.lat || 0) - (a.lat || 0));
+                const dLon = toRad((b.lng || 0) - (a.lng || 0));
+                const lat1 = toRad(a.lat || 0);
+                const lat2 = toRad(b.lat || 0);
+                const h =
+                    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+                    Math.sin(dLon / 2) * Math.sin(dLon / 2) *
+                        Math.cos(lat1) *
+                        Math.cos(lat2);
+                const c = 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
+                return R * c;
+            };
+
+            const suggestions = [];
+
+            demandScores.forEach((demand) => {
+                const targetLocation = demand.location;
+
+                const severityMultiplier =
+                    demand.severity === 'critical'
+                        ? 1.0
+                        : demand.severity === 'high'
+                        ? 0.7
+                        : demand.severity === 'medium'
+                        ? 0.4
+                        : 0.2;
+
+                const desiredUnits = Math.ceil(
+                    (demand.affectedPopulation / 50000) * severityMultiplier,
+                );
+
+                const byType = {};
+                resources.forEach((r) => {
+                    const deployed = Math.max(0, (r.quantity || 0) - (r.available || 0));
+                    if (!byType[r.type]) {
+                        byType[r.type] = { deployed: 0, items: [] };
+                    }
+                    byType[r.type].deployed += deployed;
+                    byType[r.type].items.push(r);
+                });
+
+                Object.entries(byType).forEach(([type, info]) => {
+                    const neededFromType = Math.max(
+                        0,
+                        Math.round((desiredUnits * (info.deployed || 0)) / (totalDeployedBefore || 1)),
+                    );
+                    if (!neededFromType) return;
+
+                    const donors = info.items
+                        .filter((r) => r.location !== targetLocation)
+                        .map((r) => {
+                            const blocked =
+                                (r.roadStatus || r.road_status || '').toLowerCase() === 'blocked' ||
+                                (r.roadStatus || r.road_status || '').toLowerCase() === 'flooded';
+                            const distanceKm = haversineKm(demand.coordinates, r.coordinates);
+                            return { resource: r, blocked, distanceKm };
+                        })
+                        .sort((a, b) => {
+                            if (a.blocked !== b.blocked) {
+                                return a.blocked ? 1 : -1;
+                            }
+                            const aAvail = a.resource.available || 0;
+                            const bAvail = b.resource.available || 0;
+                            if (a.distanceKm != null && b.distanceKm != null) {
+                                if (a.distanceKm !== b.distanceKm) {
+                                    return a.distanceKm - b.distanceKm;
+                                }
+                            }
+                            return bAvail - aAvail;
+                        })
+                        .map((entry) => entry.resource);
+
+                    let remaining = neededFromType;
+
+                    donors.forEach((donor) => {
+                        if (remaining <= 0) return;
+                        const movable = Math.max(0, (donor.available || 0) - 1);
+                        if (!movable) return;
+                        const quantityToMove = Math.min(movable, remaining);
+
+                        suggestions.push({
+                            resourceId: donor.id,
+                            type,
+                            fromLocation: donor.location,
+                            toLocation: targetLocation,
+                            quantityToMove,
+                            reason: `Reallocate to support ${demand.severity} ${demand.type} risk in ${targetLocation}`,
+                        });
+
+                        remaining -= quantityToMove;
+                    });
+                });
+            });
+
+            const summary = {
+                totalPredictions: predictions.length,
+                totalResources: resources.length,
+                totalDeployedBefore,
+                suggestedTransfers: suggestions.length,
+            };
+
+            return {
+                success: true,
+                data: {
+                    suggestions,
+                    summary,
+                },
+                timestamp: new Date(),
+            };
+        } catch (error) {
+            return {
+                success: false,
+                message: 'Failed to optimize resources',
+                error: error instanceof Error ? error.message : 'Unknown error',
+                timestamp: new Date(),
+            };
+        }
+    }
+
+    // ============ EVACUATION ROUTES ============
+
+    async generateEvacuationRoutes(origin, disasterType) {
+        try {
+            const [predictionsResult, resourcesResult] = await Promise.all([
+                this.getPredictions(),
+                this.getResources(),
+            ]);
+
+            if (!predictionsResult.success || !resourcesResult.success) {
+                return {
+                    success: false,
+                    message: 'Failed to load data for evacuation planning',
+                    timestamp: new Date(),
+                };
+            }
+
+            const predictions = (predictionsResult.data || []).filter(
+                (p) => !disasterType || p.type === disasterType,
+            );
+            const resources = resourcesResult.data || [];
+
+            if (!predictions.length || !resources.length) {
+                return {
+                    success: false,
+                    message: 'Not enough data to generate evacuation routes',
+                    data: { routes: [] },
+                    timestamp: new Date(),
+                };
+            }
+
+            const safeResources = resources.filter(
+                (r) => (r.status || '').toLowerCase() !== 'depleted',
+            );
+
+            const originPoint = origin || predictions[0].coordinates || {
+                lat: 0,
+                lng: 0,
+            };
+
+            const routes = [];
+
+            for (let idx = 0; idx < Math.min(3, predictions.length); idx++) {
+                const prediction = predictions[idx];
+                const start = prediction.coordinates || originPoint;
+
+                const nearbySafe = safeResources.slice(0, 2);
+
+                for (let routeIdx = 0; routeIdx < nearbySafe.length; routeIdx++) {
+                    const entry = nearbySafe[routeIdx];
+                    const end = entry.coordinates || originPoint;
+
+                    let distanceKm = 0;
+                    let estimatedTimeMin = 0;
+                    let path = [start, end];
+
+                    try {
+                        const routed = await getRoute(start, end);
+                        if (routed) {
+                            distanceKm = routed.distanceKm;
+                            estimatedTimeMin = routed.estimatedTimeMin;
+                            path = routed.path;
+                        }
+                    } catch (e) {
+                        // Fallback silently to simple straight line
+                        distanceKm = 0;
+                        estimatedTimeMin = 0;
+                        path = [start, end];
+                    }
+
+                    const riskLevel =
+                        prediction.severity === 'critical'
+                            ? 'high'
+                            : prediction.severity === 'high'
+                            ? 'medium'
+                            : 'low';
+
+                    routes.push({
+                        id: `${prediction.id}-${routeIdx}`,
+                        name: `Route ${idx + 1}.${routeIdx + 1} from ${prediction.location}`,
+                        from: prediction.location,
+                        to: entry.location || 'Safe Zone',
+                        riskLevel,
+                        distanceKm,
+                        estimatedTimeMin,
+                        path,
+                    });
+                }
+            }
+
+            return {
+                success: true,
+                data: { routes },
+                timestamp: new Date(),
+            };
+        } catch (error) {
+            return {
+                success: false,
+                message: 'Failed to generate evacuation routes',
+                error: error instanceof Error ? error.message : 'Unknown error',
+                timestamp: new Date(),
             };
         }
     }
