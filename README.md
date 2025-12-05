@@ -1,73 +1,119 @@
-# Welcome to your Lovable project
+# Swift Response Grid  AI-Powered Disaster Command Center
 
-## Project info
+AI-driven dashboard for monitoring disasters, triaging citizen reports, and coordinating response teams in real time.
 
-**URL**: https://lovable.dev/projects/57feb46e-bdf6-48a8-829a-bca598b88e0b
+> Built as a full-stack demo: real-time updates, protected routes with roles, AI insights, and a polished command-center UI.
 
-## How can I edit this code?
+---
 
-There are several ways of editing your application.
+## Live Demo
 
-**Use Lovable**
+- _(Optional)_ **Live URL:** `https://your-deployment-url-here`  
+  Add your Netlify/Vercel URL here once you deploy.
 
-Simply visit the [Lovable Project](https://lovable.dev/projects/57feb46e-bdf6-48a8-829a-bca598b88e0b) and start prompting.
+---
 
-Changes made via Lovable will be committed automatically to this repo.
+## Features
 
-**Use your preferred IDE**
+- **AI Insights**  
+  Central `AI Insights` page shows model confidence, risk summaries, and recommended mitigation actions.
 
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
+- **Predictions**  
+  AI-powered disaster predictions with severity filters, model confidence, and early-warning window.
 
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
+- **Alerts Center**  
+  Live alert feed with unread counts, severity chips, and **“new alert”** highlight when events stream in.
 
-Follow these steps:
+- **Reported Disasters**  
+  `/reports` page listing citizen and field reports with severity + status badges and filters.
 
-```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
+- **Real-time Updates**  
+  WebSocket-powered updates for alerts, stats, and resources via a shared `useRealtimeData` hook.
 
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
+- **Role-based Access Control**  
+  Simple front-end auth with roles:
+  - `admin@example.com` – full access
+  - `responder@example.com` – field operations focus
+  - `civilian@example.com` – citizen-facing view
 
-# Step 3: Install the necessary dependencies.
-npm i
+- **Modern UI & Theming**  
+  Command-center style layout (sidebar + header), dark theme, Tailwind-based components, and subtle animations.
 
-# Step 4: Start the development server with auto-reloading and an instant preview.
+---
+
+## Tech Stack
+
+- **Frontend**
+  - React 18 + Vite
+  - React Router
+  - Tailwind CSS + shadcn-style UI components
+  - TanStack Query (React Query)
+  - Socket.IO client for realtime updates
+
+- **Backend**
+  - Node.js + Express
+  - PostgreSQL (via `pg`)
+  - Socket.IO server
+  - Helmet, CORS, Morgan
+
+---
+
+## Getting Started
+
+### Prerequisites
+
+- Node.js 18+
+- npm or pnpm
+
+### Frontend (Command Center UI)
+
+```bash
+cd ./
+npm install
 npm run dev
 ```
 
-**Edit a file directly in GitHub**
+The frontend runs by default at **http://localhost:5173**.
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+### Backend (API + Realtime Socket)
 
-**Use GitHub Codespaces**
+```bash
+cd server
+npm install
+npm run dev
+```
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
+The backend runs by default at **http://localhost:3001** and exposes REST + Socket.IO endpoints under `/api`.
 
-## What technologies are used for this project?
+---
 
-This project is built with:
+## Auth & Roles
 
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
+- Frontend-only auth using a simple `AuthProvider` with localStorage persistence.
+- Login with one of the demo emails (any password):
+  - `admin@example.com`
+  - `responder@example.com`
+  - `civilian@example.com`
+- Protected routes (`/`, `/predictions`, `/alerts`, `/analytics`, `/reports`, etc.) use a `RequireAuth` wrapper.
 
-## How can I deploy this project?
+---
 
-Simply open [Lovable](https://lovable.dev/projects/57feb46e-bdf6-48a8-829a-bca598b88e0b) and click on Share -> Publish.
+## Screenshots
 
-## Can I connect a custom domain to my Lovable project?
+Add PNGs under a `docs/` folder and link them here, for example:
 
-Yes, you can!
+- `docs/dashboard.png` – Main command center overview
+- `docs/alerts.png` – Real-time alert feed with unread counts
+- `docs/reports.png` – Reported disasters list with filters
 
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
+```md
+![Dashboard](docs/dashboard.png)
+![Alerts](docs/alerts.png)
+![Reported Disasters](docs/reports.png)
+```
 
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
+---
+
+## Notes
+
+- This project is optimized as a **portfolio-friendly demo**: it showcases real-time UX, AI storytelling in the UI, and role-based access, even when running on mocked or sample data.
